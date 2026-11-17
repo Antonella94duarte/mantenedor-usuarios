@@ -1,0 +1,258 @@
+openapi: 3.0.3
+info:
+  title: API de Usuarios
+  version: 1.0.0
+  description: |
+    API REST del mantenedor de usuarios (CRUD).
+
+    - Los errores se devuelven en formato RFC 7807 (`application/problem+json`).
+    - La contraseña se almacena cifrada (BCrypt) y nunca se incluye en las respuestas.
+    - El dígito verificador (`dv`) se valida contra el `rut` con el algoritmo módulo 11.
+servers:
+  - url: http://localhost:8080
+    description: Ejecución local
+tags:
+  - name: Usuarios
+    description: Mantenedor de usuarios
+paths:
+  /api/v1/usuarios:
+    get:
+      tags: [Usuarios]
+      operationId: listarUsuarios
+      summary: Lista todos los usuarios
+      responses:
+        '200':
+          description: Listado de usuarios ordenado por id
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsuarioResponse'
+    post:
+      tags: [Usuarios]
+      operationId: crearUsuario
+      summary: Registra un nuevo usuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioCreateRequest'
+      responses:
+        '201':
+          description: Usuario creado
+          headers:
+            Location:
+              description: URL del usuario creado
+              schema:
+                type: string
+                format: uri
+                example: http://localhost:8080/api/v1/usuarios/1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioResponse'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '409':
+          $ref: '#/components/responses/RecursoDuplicado'
+  /api/v1/usuarios/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador del usuario
+        schema:
+          type: integer
+          format: int64
+          example: 1
+    get:
+      tags: [Usuarios]
+      operationId: obtenerUsuario
+      summary: Obtiene un usuario por su id
+      responses:
+        '200':
+          description: Usuario encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioResponse'
+        '404':
+          $ref: '#/components/responses/UsuarioNoEncontrado'
+    put:
+      tags: [Usuarios]
+      operationId: actualizarUsuario
+      summary: Modifica un usuario existente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioUpdateRequest'
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioResponse'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/UsuarioNoEncontrado'
+        '409':
+          $ref: '#/components/responses/RecursoDuplicado'
+    delete:
+      tags: [Usuarios]
+      operationId: eliminarUsuario
+      summary: Elimina un usuario
+      responses:
+        '204':
+          description: Usuario eliminado
+        '404':
+          $ref: '#/components/responses/UsuarioNoEncontrado'
+components:
+  schemas:
+    UsuarioBase:
+      type: object
+      properties:
+        nombres:
+          type: string
+          maxLength: 100
+          example: María José
+        apellidos:
+          type: string
+          maxLength: 100
+          example: González Rojas
+        rut:
+          type: integer
+          format: int64
+          minimum: 1
+          description: RUT sin puntos ni dígito verificador
+          example: 12345678
+        dv:
+          type: string
+          pattern: '^[0-9kK]$'
+          description: Dígito verificador (0-9 o K); debe corresponder al RUT
+          example: '5'
+        fechaNacimiento:
+          type: string
+          format: date
+          description: Fecha de nacimiento (ISO 8601), anterior a hoy
+          example: '1990-05-17'
+        correoElectronico:
+          type: string
+          format: email
+          maxLength: 150
+          example: maria.gonzalez@example.com
+    UsuarioCreateRequest:
+      description: Datos para registrar un usuario
+      allOf:
+        - $ref: '#/components/schemas/UsuarioBase'
+        - type: object
+          required: [nombres, apellidos, rut, dv, fechaNacimiento, correoElectronico, contrasena]
+          properties:
+            contrasena:
+              type: string
+              format: password
+              minLength: 8
+              maxLength: 72
+              writeOnly: true
+              example: Secreta.123
+    UsuarioUpdateRequest:
+      description: Datos para modificar un usuario existente
+      allOf:
+        - $ref: '#/components/schemas/UsuarioBase'
+        - type: object
+          required: [nombres, apellidos, rut, dv, fechaNacimiento, correoElectronico]
+          properties:
+            contrasena:
+              type: string
+              format: password
+              minLength: 8
+              maxLength: 72
+              writeOnly: true
+              nullable: true
+              description: Nueva contraseña. Si se omite, se conserva la actual.
+              example: NuevaClave.456
+    UsuarioResponse:
+      description: Usuario registrado (no incluye la contraseña)
+      allOf:
+        - type: object
+          required: [id, nombres, apellidos, rut, dv, fechaNacimiento, correoElectronico]
+          properties:
+            id:
+              type: integer
+              format: int64
+              readOnly: true
+              example: 1
+        - $ref: '#/components/schemas/UsuarioBase'
+    ErrorCampo:
+      type: object
+      required: [campo, mensaje]
+      properties:
+        campo:
+          type: string
+          example: dv
+        mensaje:
+          type: string
+          example: El dígito verificador no corresponde al RUT
+    Problema:
+      description: Error en formato RFC 7807
+      type: object
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+          example: Solicitud inválida
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: Uno o más campos no son válidos
+        instance:
+          type: string
+          example: /api/v1/usuarios
+        errores:
+          type: array
+          description: Detalle por campo (presente en errores 400 y 409)
+          items:
+            $ref: '#/components/schemas/ErrorCampo'
+  responses:
+    SolicitudInvalida:
+      description: Datos inválidos
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    UsuarioNoEncontrado:
+      description: Usuario no encontrado
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+          example:
+            type: about:blank
+            title: Usuario no encontrado
+            status: 404
+            detail: No existe un usuario con id 99
+            instance: /api/v1/usuarios/99
+    RecursoDuplicado:
+      description: El RUT o el correo electrónico ya están registrados
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+          example:
+            type: about:blank
+            title: Recurso duplicado
+            status: 409
+            detail: Ya existe un usuario con ese RUT
+            instance: /api/v1/usuarios
+            errores:
+              - campo: rut
+                mensaje: Ya existe un usuario con ese RUT
